@@ -4,7 +4,7 @@ import threading
 import sys
 import time
 
-SERVER_HOST = "172.18.3.16"  # Ganti dengan IP publik/server Anda saat deploy
+SERVER_HOST = "172.14.7.2"  # Ganti dengan IP publik/server Anda saat deploy
 SERVER_PORT = 5005
 
 def receive_messages(sock):

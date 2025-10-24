@@ -17,33 +17,66 @@ if not TOMTOM_API_KEY:
 # Konfigurasi
 SERVER_HOST = "0.0.0.0"  # Dengarkan semua antarmuka
 SERVER_PORT = 5005
-UPDATE_INTERVAL = 10  # detik
+UPDATE_INTERVAL = 3.5  # detik
 
 # Simpan client aktif: set dari (ip, port)
 clients = set()
 clients_lock = threading.Lock()
 
 def get_traffic_data(lat, lon):
-    """Ambil data lalu lintas dari TomTom API."""
-    url = "https://api.tomtom.com/traffic/services/4/flowSegmentData/absolute/10/json"
+    """Ambil data lalu lintas & info jalan dari TomTom API secara lengkap."""
+    traffic_url = "https://api.tomtom.com/traffic/services/4/flowSegmentData/absolute/10/json"
+    road_url = f"https://api.tomtom.com/search/2/reverseGeocode/{lat},{lon}.json"
+
     try:
-        response = requests.get(url, params={"point": f"{lat},{lon}", "key": TOMTOM_API_KEY}, timeout=10)
+        # ==== 1️⃣ Request data lalu lintas ====
+        response = requests.get(traffic_url, params={
+            "point": f"{lat},{lon}",
+            "key": TOMTOM_API_KEY
+        }, timeout=10)
         response.raise_for_status()
-        data = response.json()
-        flow = data.get("flowSegmentData", {})
-        current = flow.get("currentSpeed", 0)
-        free = flow.get("freeFlowSpeed", 1)
-        congestion = max(0, min(1, 1 - (current / free))) if free > 0 else 0
-        return {
-            "road": flow.get("roadName", "Unknown"),
-            "current_speed": current,
-            "free_flow_speed": free,
-            "congestion_percent": round(congestion * 100, 1),
-            "timestamp": datetime.now().strftime("%H:%M:%S")
+        traffic_data = response.json()
+
+        # ==== 2️⃣ Request data nama jalan ====
+        response2 = requests.get(road_url, params={"key": TOMTOM_API_KEY}, timeout=10)
+        response2.raise_for_status()
+        road_data = response2.json()
+
+        # ==== 3️⃣ Ekstrak informasi utama ====
+        flow = traffic_data.get("flowSegmentData", {})
+        road_info = road_data.get("addresses", [{}])[0].get("address", {})
+
+        road_name = road_info.get("streetName", "Unknown")
+        current_speed = flow.get("currentSpeed", 0)
+        free_speed = flow.get("freeFlowSpeed", 1)
+        confidence = flow.get("confidence", 0)
+        congestion = max(0, min(1, 1 - (current_speed / free_speed))) if free_speed > 0 else 0
+
+        # ==== 4️⃣ Gabungkan hasil ====
+        result = {
+            "summary": {
+                "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "latitude": lat,
+                "longitude": lon,
+                "road_name": road_name,
+                "current_speed": current_speed,
+                "free_flow_speed": free_speed,
+                "congestion_percent": round(congestion * 100, 1),
+                "confidence": confidence
+            },
+            "reverse_geocoding": road_data,   # response lengkap
+            "traffic_flow": traffic_data       # response lengkap
         }
+
+        return result
+
     except Exception as e:
         print(f"[API ERROR] {e}")
-        return None
+        return {
+            "error": True,
+            "message": str(e),
+            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        }
 
 def broadcast_message(message):
     """Kirim pesan ke semua client."""
@@ -56,24 +89,33 @@ def broadcast_message(message):
                 clients.discard(client)
 
 def traffic_updater():
-    # Koordinat Jalan Kenjeran, Surabaya (dekat Kenjeran Park)
-    LAT = -7.245894285857918
-    LON = 112.77131218188374
+    #jl wonokromo
+    # LAT = -7.302352137612897
+    # LON = 112.73684452653953
+
+    #jl ahmad yani
+    LAT = -7.385263061710606
+    LON = 112.72859890463283
+
     while True:
         traffic = get_traffic_data(LAT, LON)
-        if traffic:
+
+        if "error" not in traffic:
+            s = traffic["summary"]
             msg = (
-                f"[LALU LINTAS KENJERAN] {traffic['timestamp']} | "
-                f"Jalan: {traffic['road']} | "
-                f"Kecepatan: {traffic['current_speed']} km/jam | "
-                f"Kemacetan: {traffic['congestion_percent']}%"
+                f"[LALU LINTAS] {s['timestamp']} | "
+                f"Lokasi: {s['road_name']} | "
+                f"Kecepatan: {s['current_speed']} km/jam | "
+                f"Kemacetan: {s['congestion_percent']}% | "
+                f"Confidence: {s['confidence']}"
             )
             print(f"[SERVER] Broadcast: {msg}")
             broadcast_message(msg)
         else:
-            error_msg = "[LALU LINTAS] Gagal ambil data untuk Kenjeran"
+            error_msg = f"[LALU LINTAS] Gagal ambil data: {traffic['message']}"
             print(f"[SERVER] {error_msg}")
             broadcast_message(error_msg)
+
         time.sleep(UPDATE_INTERVAL)
 
 def handle_client():
