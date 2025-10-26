@@ -94,9 +94,15 @@ def traffic_updater():
     # LON = 112.73684452653953
 
     #jl ahmad yani
-    LAT = -7.385263061710606
-    LON = 112.72859890463283
+    # LAT = -7.385263061710606
+    # LON = 112.72859890463283
 
+    #Jalan Prabu Siliwangi
+    # LAT = -7.30841281142686 
+    # LON = 112.71237302449151 
+    # -7.100295982078176, 112.18871171571449
+    LAT = -7.100295982078176 
+    LON = 112.18871171571449
     while True:
         traffic = get_traffic_data(LAT, LON)
 
