@@ -88,27 +88,6 @@ def broadcast_message(message):
                 print(f"[SEND ERROR] Gagal kirim ke {client}: {e}")
                 clients.discard(client)
 
-
-def geocode_address(query):
-    """Ubah nama jalan/alamat menjadi (lat, lon) menggunakan TomTom Geocoding API."""
-    # Encode spasi & karakter khusus secara aman
-    url = f"https://api.tomtom.com/search/2/geocode/{requests.utils.quote(query)}.json"
-    try:
-        response = requests.get(url, params={"key": TOMTOM_API_KEY}, timeout=10)
-        response.raise_for_status()
-        data = response.json()
-        if data.get("results"):
-            pos = data["results"][0]["position"]
-            print(f"[GEOCODE] '{query}' → ({pos['lat']}, {pos['lon']})")
-            return pos["lat"], pos["lon"]
-        else:
-            print(f"[GEOCODE] Tidak ditemukan hasil untuk: {query}")
-            return None, None
-    except Exception as e:
-        print(f"[GEOCODE ERROR] {e}")
-        return None, None
-
-
 def traffic_updater():
     #jl wonokromo
     # LAT = -7.302352137612897
@@ -121,21 +100,11 @@ def traffic_updater():
     #Jalan Prabu Siliwangi
     # LAT = -7.30841281142686 
     # LON = 112.71237302449151 
-    # -7.100295982078176, 112.18871171571449
-    # LAT = -7.100295982078176 
-    # LON = 112.18871171571449
-
-       # 🔁 Ganti di sini: masukkan nama jalan yang ingin dipantau
-    LOCATION_NAME = "Jalan Raya Jemursari, Surabaya"  # Contoh: sesuaikan kota agar akurat!
-
-    # Ambil koordinat sekali di awal
-    lat, lon = geocode_address(LOCATION_NAME)
-    if lat is None or lon is None:
-        print(f"[FATAL] Tidak bisa memulai pemantauan karena gagal geocoding.")
-        return
-
+    # , 
+    LAT = -7.327433511958167 
+    LON = 112.73226468935879
     while True:
-        traffic = get_traffic_data(lat, lon)
+        traffic = get_traffic_data(LAT, LON)
 
         if "error" not in traffic:
             s = traffic["summary"]

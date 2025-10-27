@@ -7,7 +7,7 @@ import re
 from datetime import datetime
 
 # === Konfigurasi Server ===
-SERVER_HOST = "192.168.182.227"  # Ganti sesuai IP server Anda
+SERVER_HOST = "192.168.14.67"  # Ganti sesuai IP server Anda
 SERVER_PORT = 5005
 
 class TrafficMonitorApp:
