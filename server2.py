@@ -19,15 +19,8 @@ SERVER_HOST = "0.0.0.0"
 SERVER_PORT = 5005
 UPDATE_INTERVAL = 3.5
 
-# --- PERUBAHAN 1: Variabel Global untuk Lokasi Dinamis ---
-# Simpan lokasi yang sedang dipantau secara global
-current_location = {
-    # Lokasi default saat server pertama kali jalan
-    "name": "Jalan Mayjen Sungkono, Surabaya",
-    "lat": -7.2910,
-    "lon": 112.7203
-}
-location_lock = threading.Lock() # Lock untuk menjaga data thread-safe
+current_location = {}
+location_lock = threading.Lock() 
 
 # Simpan client aktif
 clients = set()
@@ -104,48 +97,55 @@ def broadcast_message(message):
 def traffic_updater():
     """Thread yang secara periodik mengambil dan menyebarkan data lalu lintas."""
     while True:
-        with location_lock:
-            # --- PERUBAHAN 2: Gunakan koordinat dari variabel global ---
-            lat, lon = current_location["lat"], current_location["lon"]
+        lat, lon, name = None, None, None
         
-        traffic = get_traffic_data(lat, lon)
+        with location_lock:
+            if "lat" in current_location:
+                lat = current_location["lat"]
+                lon = current_location["lon"]
+                name = current_location["name"]
+        
+        # Jika lat, lon, dan name ada (tidak None), baru jalankan API
+        if lat is not None and lon is not None:
+            # Pindahkan print ke sini agar tidak spam saat idle
+            print(f"[SERVER] Mengambil data untuk: {name} ({lat}, {lon})")
+            
+            traffic = get_traffic_data(lat, lon)
 
-        if "error" not in traffic:
-            s = traffic["summary"]
-            msg = (
-                f"[LALU LINTAS] {s['timestamp']} | "
-                f"Lokasi: {s['road_name']} | "
-                f"Kecepatan: {s['current_speed']} km/jam | "
-                f"Kemacetan: {s['congestion_percent']}% | "
-                f"Confidence: {s['confidence']}"
-            )
-            print(f"[SERVER] Broadcast: {msg}")
-            broadcast_message(msg)
-        else:
-            error_msg = f"[LALU LINTAS] Gagal ambil data: {traffic['message']}"
-            print(f"[SERVER] {error_msg}")
-            broadcast_message(error_msg)
-
+            if "error" not in traffic:
+                s = traffic["summary"]
+                msg = (
+                    f"[LALU LINTAS] {s['timestamp']} | "
+                    f"Lokasi: {s['road_name']} | "
+                    f"Kecepatan: {s['current_speed']} km/jam | "
+                    f"Kemacetan: {s['congestion_percent']}% | "
+                    f"Confidence: {s['confidence']}"
+                )
+                print(f"[SERVER] {msg}")
+                broadcast_message(msg)
+            else:
+                error_msg = f"[LALU LINTAS] Gagal ambil data: {traffic['message']}"
+                print(f"[SERVER] {error_msg}")
+                broadcast_message(error_msg)
+        
         time.sleep(UPDATE_INTERVAL)
 
 def handle_client():
-    """Thread untuk menerima pesan dari client (JOIN, SEARCH)."""
+    """Thread untuk menerima pesan dari client (JOIN, SEARCH, RESET)."""
     while True:
         try:
             data, addr = sock.recvfrom(1024)
             message = data.decode().strip()
             
             with clients_lock:
-                # Tambahkan client jika belum ada
                 if addr not in clients:
                     clients.add(addr)
                     print(f"[SERVER] Client baru: {addr}")
-                    sock.sendto(b"[SERVER] Anda berhasil terhubung! Silakan cari lokasi.", addr)
+                    sock.sendto(b"[SERVER] Anda berhasil terhubung! Server dalam mode standby. Silakan cari lokasi.", addr)
 
-            # --- PERUBAHAN 3: Logika untuk menangani perintah dari client ---
             if message.upper() == "JOIN":
-                # Respon JOIN bisa diabaikan jika sudah ditangani di atas
                 pass
+            
             elif message.upper().startswith("SEARCH:"):
                 address = message.split(":", 1)[1].strip()
                 print(f"[SERVER] Menerima permintaan pencarian untuk: '{address}' dari {addr}")
@@ -160,11 +160,23 @@ def handle_client():
                     
                     success_msg = f"[SERVER] OK: Lokasi pemantauan diubah ke '{address}'. Update akan dimulai."
                     print(success_msg)
-                    broadcast_message(success_msg) # Beri tahu semua client
+                    broadcast_message(success_msg) 
                 else:
                     error_msg = f"[SERVER] GAGAL: Lokasi '{address}' tidak ditemukan."
                     print(error_msg)
-                    sock.sendto(error_msg.encode(), addr) # Hanya beri tahu client yang meminta
+                    sock.sendto(error_msg.encode(), addr) 
+
+            elif message.upper() == "RESET":
+                print(f"[SERVER] Menerima permintaan RESET dari {addr}")
+                
+                with location_lock:
+                    if current_location:
+                        current_location.clear()
+                        reset_msg = "[SERVER] OK: Pemantauan dihentikan. Server kembali ke mode standby."
+                        print(reset_msg)
+                        broadcast_message(reset_msg)
+                    else:
+                        sock.sendto(b"[SERVER] INFO: Server sudah dalam mode standby.", addr)
 
         except Exception as e:
             print(f"[RECV ERROR] {e}")
@@ -173,7 +185,7 @@ if __name__ == "__main__":
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.bind((SERVER_HOST, SERVER_PORT))
     print(f"[SERVER] Berjalan di {SERVER_HOST}:{SERVER_PORT}")
-    print(f"[SERVER] Lokasi default: {current_location['name']}")
+    print(f"[SERVER] Menunggu client untuk mencari lokasi...")
 
     threading.Thread(target=handle_client, daemon=True).start()
     threading.Thread(target=traffic_updater, daemon=True).start()
